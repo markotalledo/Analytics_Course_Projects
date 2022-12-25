@@ -1,0 +1,86 @@
+# Instalamos los paquetes, importamos data y paquetes
+install.packages("MASS")
+install.packages("mlbench")
+library(MASS)      #librería para función lda (usada en sección LDA Bayesiano)
+library(readxl)    #librería para leer .xlsx
+library(mlbench)   #librería para obtener el dataset Vehicle (usada en sección LDA para varias clases)
+source("crossval.R")
+
+Leemos los datos
+PDF <- read.csv(file = 'Placement_Data_Full_Class.csv')
+
+# Convertimos a Dataframe
+PDF = data.frame(PDF)
+
+PDF$status_target = ifelse(PDF$status == "Placed","P", "N")
+
+#Separando el conjunto de datos en dos grupos
+placed   =PDF[PDF$status == "Placed",] 
+head(placed)
+
+#Separando el conjunto de datos en dos grupos
+not_placed   =PDF[PDF$status == "Not Placed",] 
+head(not_placed)
+
+#Hallando las medias  en ambos grupos
+medp<-colMeans(placed[,c('mba_p','etest_p')], na.rm = TRUE)
+medp 
+medn<-colMeans(not_placed[,c('mba_p','etest_p')], na.rm = TRUE) 
+medn 
+
+#Graficando los puntos y los centroides de cada grupo 
+#win.graph() #Crea una ventana para gráficos (graphic device) y la deja como disposito activo, al cual se enviarán todos los dibujos.
+plot(not_placed$mba_p,not_placed$etest_p,xlim=c(0,100),ylim=c(0,100),type="n",xlab="etest_p",ylab="mba") 
+title("Analisis discriminante Lineal")
+text(not_placed$mba_p,not_placed$etest_p,"n", col="red") 
+text(placed$mba_p,placed$etest_p,"p",col="blue") 
+points(medp[1],medp[2],pch=19,col="dark blue") 
+points(medn[1],medn[2],pch=19,col="dark red") 
+
+
+#Calculo de la linea de decisión
+#Hallando las matrices de covarianzas en ambos grupos 
+cov1<-cov(placed[,c('mba_p','etest_p')]) 
+cov1 
+cov2<-cov(not_placed[,c('mba_p','etest_p')]) 
+cov2  
+
+
+#Calculando los coeficientes de la función discriminante 
+covcomb=((dim(placed)[1]-1)*cov1+(dim(not_placed)[1]-1)*cov2)/(dim(placed)[1]+dim(not_placed)[1]-2) 
+covcomb
+coeflda<-(medp-medn)%*%solve(covcomb) 
+coeflda 
+
+#Calculando el termino independiente 
+indlda<-0.5*(medp-medn)%*%solve(covcomb)%*%(medp-medn) 
+indlda 
+#Graficando los puntos y los centroides de cada grupo 
+#win.graph() #Crea una ventana para gráficos (graphic device) y la deja como disposito activo, al cual se enviarán todos los dibujos.
+plot(not_placed$mba_p,not_placed$etest_p,xlim=c(0,100),ylim=c(0,100),type="n",xlab="etest_p",ylab="mba") 
+title("Analisis discriminante Lineal")
+text(not_placed$mba_p,not_placed$etest_p,"n", col="red") 
+text(placed$mba_p,placed$etest_p,"p",col="blue") 
+points(medp[1],medp[2],pch=19,col="dark blue") 
+points(medn[1],medn[2],pch=19,col="dark red") 
+# Ploteando la linea discriminante en la forma pendiente-intercepto 
+abline(indlda/coeflda[2],-coeflda[1]/coeflda[2]) 
+text(25,30,bquote(.(coeflda[1])*etest_p+.(coeflda[2])*mba_p<.(indlda)),cex= .8)
+text(75,70,bquote(.(coeflda[1])*etest_p+.(coeflda[2])*mba_p>.(indlda)),cex= .8)
+
+
+
+#---------------- 2.1 LDA Bayesiano con priors iguales -----------------
+
+lda1<-lda(PDF$status~PDF$mba_p+PDF$etest_p,prior=c(.5,.5)) 
+lda1 
+plda1=predict(lda1,PDF$status)$class 
+plda1
+
+
+
+#---------------- 2.1 LDA Bayesiano con priors ponderadas --------------
+lda2<-lda(PDF$status~PDF$mba_p+PDF$etest_p,prior=c(.5,.5)) 
+lda2 
+plda2=predict(lda2,PDF$status)$class 
+plda2

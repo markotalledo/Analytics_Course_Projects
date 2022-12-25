@@ -1,0 +1,133 @@
+#Entorno de Trabajo
+install.packages("MASS")
+install.packages("mlbench")
+library(MASS)      #librería para función lda (usada en sección LDA Bayesiano)
+library(readxl)    #librería para leer .xlsx
+library(mlbench)   #librería para obtener el dataset Vehicle (usada en sección LDA para varias clases)
+source("D:/OneDrive/Trabajos/PUCP/Analytics 2/2022-2/Laboratorio 01/crossval.R")
+#---------------- LDA --------------------------------------------------
+
+#Leer datos de eje1dis.txt
+eje1dis <- read.table("D:/OneDrive/Trabajos/PUCP/Analytics 2/2022-2/Laboratorio 01/Eje1dis.txt", header = TRUE, stringsAsFactors = TRUE, sep = "", na.strings = "NA", dec = ".", strip.white = TRUE)
+eje1dis
+
+#Separando el conjunto de datos en dos grupos
+pasan   =eje1dis[eje1dis[,4]=="p",] 
+pasan
+npasan    =dim(pasan)[1]
+npasan
+fracasan=eje1dis[eje1dis[,4]=="f",] 
+fracasan
+nfracasan =dim(fracasan)[1]
+nfracasan
+
+#Hallando las medias de E1 y E2 en ambos grupos
+medp<-colMeans(pasan[,1:2], na.rm = TRUE)
+medp 
+medf<-colMeans(fracasan[,1:2], na.rm = TRUE) 
+medf 
+
+#Graficando los puntos y los centroides de cada grupo 
+#win.graph() #Crea una ventana para gráficos (graphic device) y la deja como disposito activo, al cual se enviarán todos los dibujos.
+plot(fracasan$E1,fracasan$E2,xlim=c(0,100),ylim=c(0,100),type="n") 
+text(fracasan$E1,fracasan$E2,"f", col="red") 
+text(pasan$E1,pasan$E2,"p",col="blue") 
+points(medp[1],medp[2],pch=19,col="dark blue") 
+points(medf[1],medf[2],pch=19,col="dark red") 
+text(medp[1],medp[2],"centroide pasan",cex=.7,adj=1) 
+text(medf[1],medf[2],"centroide fracasan",cex=.7,adj=1) 
+
+
+#Calculo de la linea de decisión
+#Hallando las matrices de covarianzas en ambos grupos 
+cov1<-cov(pasan[,1:2]) 
+cov1 
+cov2<-cov(fracasan[,1:2]) 
+cov2  
+
+#Calculando los coeficientes de la función discriminante 
+covcomb=((npasan-1)*cov1+(nfracasan-1)*cov2)/(npasan+nfracasan-2) 
+covcomb
+coeflda<-(medp-medf)%*%solve(covcomb) 
+coeflda 
+
+#Calculando el termino independiente 
+indlda<-0.5*(medp-medf)%*%solve(covcomb)%*%(medp+medf) 
+indlda 
+
+#Trazando la linea del clasificador lineal sobre el plot de puntos 
+#win.graph() 
+plot(fracasan$E1,fracasan$E2,xlim=c(0,100),ylim=c(0,100),type="n",xlab="E1",ylab="E2") 
+title("Analisis discriminante Lineal para datos de examenes") 
+text(fracasan$E1,fracasan$E2,"f", col="red") 
+text(pasan$E1,pasan$E2,"p",col="blue") 
+points(medp[1],medp[2], pch=19, col="blue") 
+points(medf[1],medf[2],pch=19, col="red") 
+
+# Ploteando la linea discriminante en la forma pendiente-intercepto 
+abline(indlda/coeflda[2],-coeflda[1]/coeflda[2]) 
+text(25,30,bquote(.(coeflda[1])*E1+.(coeflda[2])*E2<.(indlda)),cex= .8)
+text(75,70,bquote(.(coeflda[1])*E1+.(coeflda[2])*E2>.(indlda)),cex= .8) 
+
+
+
+#---------------- LDA Bayesiano ----------------------------------------
+
+#---------------- 2.1 LDA Bayesiano con priors iguales -----------------
+#data(eje1dis)
+attach(eje1dis) 
+
+lda1<-lda(Nota~E1+E2,prior=c(.5,.5)) 
+lda1 
+plda1=predict(lda1,eje1dis[,-3])$class 
+plda1
+
+#Matriz de confusion 
+table(plda1,Nota)
+error1=mean(plda1!=Nota) 
+error1 
+
+#---------------- 2.1 LDA Bayesiano con priors ponderadas --------------
+lda2<-lda(Nota~E1+E2) 
+lda2 
+plda2=predict(lda2,eje1dis[,-3])$class 
+plda2
+
+#matriz de confusion 
+table(plda2,Nota)
+error2=mean(plda2!=Nota) 
+error2
+
+
+#---------------- LDA para varias clases -------------------------------
+
+#Modelo de Datos: LDA para el conjunto de Vehicle que tiene 4 clases
+load ("D:/OneDrive/Trabajos/PUCP/Analytics 2/2022-2/Laboratorio 01/vehicle.rda")
+veh<-vehicle
+veh
+#data(vehicle)
+
+ldaVehiculo=lda(vehicle[,1:18],vehicle[,19])
+predict(ldaVehiculo)$posterior
+predict(ldaVehiculo)$class
+
+#Matriz de confusión
+table(vehicle[,19], predict(ldaVehiculo)$class)
+
+#Estimación de la tasa de error de mala clasificación
+
+#Por resustitución
+mean(vehicle[,19]!=predict(ldaVehiculo)$class)
+
+#Por el metodo, dejando uno afuera
+ldaexa=lda(eje1dis[,1:3], eje1dis[,4],CV=TRUE)
+ldaexa
+mean(eje1dis[,4]!=ldaexa$class) 
+
+ldaVehiculo=lda(vehicle[,1:18],vehicle[,19],CV=TRUE) 
+ldaVehiculo  
+mean(vehicle[,19]!=ldaVehiculo$class) 
+
+#Por el metodo de validacion cruzada 
+crossval(eje1dis[,c(1,2,4)],nparts=10,method="lda",repet=10) 
+crossval(vehicle,nparts=10,method="lda",repet=10)
