@@ -1,0 +1,26 @@
+setwd("C:/CLASES R/Data Mining")
+
+library(MASS)
+
+archivo <- read.csv("attrition-train.csv", header = TRUE, sep = ";", 
+                    stringsAsFactors = TRUE)
+str(archivo)
+
+dato_util <- archivo[,c(1,4,11,13,16:19)]
+str(dato_util)
+
+ran<-sample(1:nrow(dato_util),(1200/1470)*nrow(dato_util))
+unique(ran)
+
+train_target <- dato_util[ran,]
+test_target <- dato_util[-ran,]
+
+str(train_target)
+colnames(train_target) <- c("x1","x2","x3","x4","x5","x6","x7","train")
+colnames(test_target) <- c("x1","x2","x3","x4","x5","x6","x7","train")
+
+model_lda <- lda(formula = train ~ ., data = train_target)
+
+pred_lda <- predict(model_lda, test_target[,-8])$class
+
+table(test_target[ , 8], pred_lda)

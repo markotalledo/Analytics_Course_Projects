@@ -1,0 +1,174 @@
+###########################################################################################################################################
+#											TEXT MINING											#
+###########################################################################################################################################
+
+# install.packages('twitteR')
+# install.packages('ROAuth')
+# install.packages('magrittr')
+# install.packages('tm')
+# install.packages('SnowballC')
+# install.packages('wordcloud')
+
+library(twitteR)
+library(ROAuth)
+library(magrittr)
+library(tm)
+library(SnowballC)
+library(ggplot2)
+library(wordcloud)
+library(RColorBrewer)
+
+
+############################################################### CARGA DE DATOS Y EXPLORACION
+
+## Carga del archivo en un objeto de R
+tweets <- readRDS("RDataMining-Tweets-20160212.rds")
+(n.tweet <- tweets %>% length())
+
+## Conversion del archivo a formato data frame
+tweets.df <- tweets %>% twListToDF()
+
+## Analisis individual de tweets
+tweets.df$text[20] %>% strwrap(60) %>% writeLines()
+
+
+
+############################################################## LIMPIEZA DEL TEXTO
+
+## FUNCION PARA ELIMINAR DIRECCIONES URL
+removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
+
+# FUNCION PARA REMOVER COSAS DISTINTAS DE PALABRAS
+removeNumPunct <- function(x) gsub("[^[:alpha:][:space:]]*", "", x)
+
+# PERSONALIZANDO LAS PALABRAS CONECTORAS
+myStopwords <- c(setdiff(stopwords('english'), c("r", "big")),"use", "see", "used", "via", "amp")
+
+## CONSTRUCCION DE CORPUS
+corpus.raw <- tweets.df$text %>% VectorSource() %>% Corpus()
+
+## LIMPIEZA DEL CORPUS
+corpus.cleaned <- corpus.raw %>%
+  # Convertir todo a minúsculas
+  tm_map(content_transformer(tolower)) %>%
+  # Retirar los URL
+  tm_map(content_transformer(removeURL)) %>%
+  # Remover numeros y puntuación
+  tm_map(content_transformer(removeNumPunct)) %>%
+  # Retirar a las palabras conectoras
+  tm_map(removeWords, myStopwords) %>%
+  # Remover los espacios en blanco extras
+  tm_map(stripWhitespace)
+
+
+## COMPLETADO/CORTADO DE PALABRAS A PALABRAS RAIZ
+corpus.stemmed <- corpus.cleaned %>% tm_map(stemDocument)
+
+stemCompletion2 <- function(x, dictionary) {
+  x <- unlist(strsplit(as.character(x), " "))
+  x <- x[x != ""]
+  x <- stemCompletion(x, dictionary=dictionary)
+  x <- paste(x, sep="", collapse=" ")
+  stripWhitespace(x)
+}
+
+corpus.completed <- corpus.stemmed %>%
+  lapply(stemCompletion2, dictionary=corpus.cleaned) %>% VectorSource() %>% Corpus()
+
+
+
+
+##############################################################  REEMPLAZO DE PALABRAS DOMINADAS
+
+## Conteo/frecuencia de palabras
+wordFreq <- function(corpus, word) {
+  results <- lapply(corpus,
+                    function(x) grep(as.character(x), pattern=paste0("\\<",word)) )
+  sum(unlist(results))
+}
+n.miner <- corpus.cleaned %>% wordFreq("miner")
+n.mining <- corpus.cleaned %>% wordFreq("mining")
+cat(n.miner, n.mining)
+
+## Reemplazar palabra antigua por nueva
+replaceWord <- function(corpus, oldword, newword) {
+  tm_map(corpus, content_transformer(gsub),
+         pattern=oldword, replacement=newword)
+}
+corpus.completed <- corpus.completed %>%
+  replaceWord("miner", "mining") %>%
+  replaceWord("universidad", "university") %>%
+  replaceWord("scienc", "science")
+
+
+
+############################################################## CONSTRUCCION DE LA MATRIZ DE TERMINOS
+tdm <- corpus.completed %>%
+  TermDocumentMatrix(control = list(wordLengths = c(1, Inf))) %>%
+  print
+
+
+
+############################################################## ANALISIS EXPLORATORIO DE LA MATRIZ DE TERMINOS
+## Identificar dentro de la matriz de terminos los tweets relacionados a "r" "data" "mining"
+idx <- which(dimnames(tdm)$Terms %in% c("r", "data", "mining"))
+tdm[idx, 21:30] %>% as.matrix()
+
+## Visualizar terminos que cumplen con una frecuencia minima
+freq.terms <- tdm %>% findFreqTerms(lowfreq = 30) %>% print
+
+##  Construir una tabla de frecuencia de terminos por encima de una frecuencia minima
+term.freq <- tdm %>% as.matrix() %>% rowSums()
+term.freq <- term.freq %>% subset(term.freq >= 20)
+df <- data.frame(term = names(term.freq), freq = term.freq)
+df
+
+## Grafico de frecuencia de terminos
+ggplot(df, aes(x=term, y=freq)) + geom_bar(stat="identity") +
+  xlab("Palabras") + ylab("Cantidad tweets") + coord_flip() +
+  theme(axis.text=element_text(size=7))
+
+
+
+############################################################## WORDCLOUDS
+m <- tdm %>% as.matrix
+word.freq <- m %>% rowSums() %>% sort(decreasing = T)
+pal <- brewer.pal(9, "BuGn")[-(1:4)]
+
+wordcloud(words = names(word.freq), freq = word.freq, min.freq = 3,
+          random.order = F, colors = pal)
+
+
+
+############################################################## MEDICION DE NIVEL DE RELACION ENTRE TERMINOS
+tdm %>% findAssocs("r", 0.2)
+tdm %>% findAssocs("data", 0.2)
+
+
+
+############################################################## CLUSTERING
+
+## Clustering Jerárquico
+m2 <- tdm %>% removeSparseTerms(sparse = 0.95) %>% as.matrix()
+dist.matrix <- m2 %>% scale() %>% dist()
+fit <- dist.matrix %>% hclust(method = "ward.D")
+plot(fit)
+fit %>% rect.hclust(k = 3)
+groups <- fit %>% cutree(k = 3)
+
+
+## K Medias
+m3 <- m2 %>% t()
+set.seed(122)
+k <- 3
+kmeansResult <- kmeans(m3, k)
+round(kmeansResult$centers, digits = 3)
+
+
+for (i in 1:k) {
+  cat(paste("cluster ", i, ": ", sep = ""))
+  s <- sort(kmeansResult$centers[i, ], decreasing = T)
+  cat(names(s)[1:5], "\n")
+}
+
+
